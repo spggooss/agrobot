@@ -1,37 +1,14 @@
+
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
-################################################################################
-# Copyright 2017 ROBOTIS CO., LTD.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-################################################################################
-
-# Author: Ryu Woon Jung (Leon)
-
-#
-# *********     Sync Read and Sync Write Example      *********
-#
-#
-# Available Dynamixel model on this example : All models using Protocol 2.0
-# This example is tested with two Dynamixel PRO 54-200, and an USB2DYNAMIXEL
-# Be sure that Dynamixel PRO properties are already set as %% ID : 1 / Baudnum : 1 (Baudrate : 57600)
-#
 
 import os
+from dynamixel_sdk import *                    # Uses Dynamixel SDK library
+# import torch
 
 
-def getArmToPosition(dxl1_value, dxl2_value, dxl3_value, dxl4_value):
+# model = torch.hub.load('ultralytics/yolov5', 'agrobot')
+
+def getArmToPosition(groupSyncWrite, groupSyncRead, packetHandler,  dxl1_value, dxl2_value, dxl3_value, dxl4_value):
     # Allocate goal position value into byte array
     param_goal_position1 = [DXL_LOBYTE(DXL_LOWORD(dxl1_value)),
                             DXL_HIBYTE(DXL_LOWORD(dxl1_value)),
@@ -132,6 +109,50 @@ def getArmToPosition(dxl1_value, dxl2_value, dxl3_value, dxl4_value):
                         abs(dxl4_value - dxl4_present_position) > DXL_MOVING_STATUS_THRESHOLD)):
             break
 
+def getBallToPosition(groupSyncWrite,groupSyncRead, packetHandler, dxl5_value):
+    # Allocate goal position value into byte array
+    param_goal_position5 = [DXL_LOBYTE(DXL_LOWORD(dxl5_value)),
+                            DXL_HIBYTE(DXL_LOWORD(dxl5_value)),
+                            DXL_LOBYTE(DXL_HIWORD(dxl5_value)),
+                            DXL_HIBYTE(DXL_HIWORD(dxl5_value))]
+
+    # Add Dynamixel#5 goal position value to the Syncwrite parameter storage
+    dxl_addparam_result = groupSyncWrite.addParam(DXL5_ID, param_goal_position5)
+    if dxl_addparam_result != True:
+        print("[ID:%03d] groupSyncWrite addparam failed" % DXL5_ID)
+        quit()
+
+
+    # Syncwrite goal position
+    dxl_comm_result = groupSyncWrite.txPacket()
+    if dxl_comm_result != COMM_SUCCESS:
+        print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
+
+    # Clear syncwrite parameter storage
+    groupSyncWrite.clearParam()
+
+    while 1:
+        # Syncread present position
+        dxl_comm_result = groupSyncRead.txRxPacket()
+        if dxl_comm_result != COMM_SUCCESS:
+            print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
+
+        # Check if groupsyncread data of Dynamixel#2 is available
+        dxl_getdata_result = groupSyncRead.isAvailable(DXL5_ID, ADDR_PRO_PRESENT_POSITION, LEN_PRO_PRESENT_POSITION)
+        if dxl_getdata_result != True:
+            print("[ID:%03d] groupSyncRead getdata failed" % DXL5_ID)
+            quit()
+
+        # Get Dynamixel#1 present position value
+        dxl5_present_position = groupSyncRead.getData(DXL5_ID, ADDR_PRO_PRESENT_POSITION, LEN_PRO_PRESENT_POSITION)
+
+        print("[ID:%03d]  PresPos:%03d" % (
+            DXL5_ID, dxl5_present_position))
+
+        if not ((abs(dxl5_value - dxl5_present_position) > DXL_MOVING_STATUS_THRESHOLD) ):
+            break
+
+
 if os.name == 'nt':
     import msvcrt
     def getch():
@@ -148,7 +169,6 @@ else:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         return ch
 
-from dynamixel_sdk import *                    # Uses Dynamixel SDK library
 
 # Control table address
 # ADDR_PRO_VELOCITY_LIMIT      = 44
@@ -156,6 +176,8 @@ ADDR_PRO_VELOCITY_LIMIT      = 112
 ADDR_PRO_TORQUE_ENABLE      = 64               # Control table address is different in Dynamixel model
 ADDR_PRO_GOAL_POSITION      = 116
 ADDR_PRO_PRESENT_POSITION   = 132
+Arm = True
+Ballscrew = True
 
 # Data Byte Length
 LEN_PRO_GOAL_POSITION       = 4
@@ -169,20 +191,22 @@ DXL1_ID                     = 11                 # Dynamixel#1 ID : 1
 DXL2_ID                     = 12                 # Dynamixel#1 ID : 2
 DXL3_ID                     = 13                 # Dynamixel#1 ID : 1
 DXL4_ID                     = 14                 # Dynamixel#1 ID : 2
-BAUDRATE                    = 1000000             # Dynamixel default baudrate : 57600
-DEVICENAME                  = 'COM3'    # Check which port is being used on your controller
+DXL5_ID                     = 15
+BAUDRATE                    = 1000000            # Dynamixel default baudrate : 57600
+DEVICENAME                  = 'COM3'            # Check which port is being used on your controller
                                                 # ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
 
 TORQUE_ENABLE               = 1                 # Value for enabling the torque
 TORQUE_DISABLE              = 0                 # Value for disabling the torque
-DXL_MINIMUM_POSITION_VALUE  = 1000           # Dynamixel will rotate between this value
-DXL_MAXIMUM_POSITION_VALUE  = 3000            # and this value (note that the Dynamixel would not move when the position value is out of movable range. Check e-manual about the range of the Dynamixel you use.)
-MAX_VELOCITY               = 15000
+DXL_MINIMUM_POSITION_VALUE  = 1000              # Dynamixel will rotate between this value
+DXL_MAXIMUM_POSITION_VALUE  = 3000              # and this value (note that the Dynamixel would not move when the
+                                                # position value is out of movable range. Check e-manual about the range of the Dynamixel you use.)
+MAX_VELOCITY               = 1023
 DXL_MOVING_STATUS_THRESHOLD = 20                # Dynamixel moving status threshold
 
 index = 0
 dxl_goal_position = [DXL_MINIMUM_POSITION_VALUE, DXL_MAXIMUM_POSITION_VALUE]
-dxl_goal_position2 = [0, 10000] # Goal position
+dxl_goal_position2 = [0, 266240]                # Goal position
 
 
 # Initialize PortHandler instance
@@ -221,145 +245,182 @@ else:
     quit()
 
 
-dxl_comm_result, dxl_error = packetHandler.write4ByteTxRx(portHandler, DXL1_ID, ADDR_PRO_VELOCITY_LIMIT, MAX_VELOCITY)
-if dxl_comm_result != COMM_SUCCESS:
-    print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
-elif dxl_error != 0:
-    print("%s" % packetHandler.getRxPacketError(dxl_error))
-else:
-    print("Dynamixel#%d has been successfully connected" % DXL1_ID)
+if Arm:
+    dxl_comm_result, dxl_error = packetHandler.write4ByteTxRx(portHandler, DXL1_ID, ADDR_PRO_VELOCITY_LIMIT, MAX_VELOCITY)
+    if dxl_comm_result != COMM_SUCCESS:
+        print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
+    elif dxl_error != 0:
+        print("%s" % packetHandler.getRxPacketError(dxl_error))
+    else:
+        print("Dynamixel#%d has set max velocity" % DXL1_ID)
 
-# Enable Dynamixel#2 Torque
-dxl_comm_result, dxl_error = packetHandler.write4ByteTxRx(portHandler, DXL2_ID, ADDR_PRO_VELOCITY_LIMIT, MAX_VELOCITY)
-if dxl_comm_result != COMM_SUCCESS:
-    print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
-elif dxl_error != 0:
-    print("%s" % packetHandler.getRxPacketError(dxl_error))
-else:
-    print("Dynamixel#%d has been successfully connected" % DXL2_ID)
+    # Enable Dynamixel#2 Torque
+    dxl_comm_result, dxl_error = packetHandler.write4ByteTxRx(portHandler, DXL2_ID, ADDR_PRO_VELOCITY_LIMIT, MAX_VELOCITY)
+    if dxl_comm_result != COMM_SUCCESS:
+        print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
+    elif dxl_error != 0:
+        print("%s" % packetHandler.getRxPacketError(dxl_error))
+    else:
+        print("Dynamixel#%d has set max velocity" % DXL2_ID)
 
-# Enable Dynamixel#3 Torque
-dxl_comm_result, dxl_error = packetHandler.write4ByteTxRx(portHandler, DXL3_ID, ADDR_PRO_VELOCITY_LIMIT, MAX_VELOCITY)
-if dxl_comm_result != COMM_SUCCESS:
-    print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
-elif dxl_error != 0:
-    print("%s" % packetHandler.getRxPacketError(dxl_error))
-else:
-    print("Dynamixel#%d has been successfully connected" % DXL3_ID)
+    # Enable Dynamixel#3 Torque
+    dxl_comm_result, dxl_error = packetHandler.write4ByteTxRx(portHandler, DXL3_ID, ADDR_PRO_VELOCITY_LIMIT, MAX_VELOCITY)
+    if dxl_comm_result != COMM_SUCCESS:
+        print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
+    elif dxl_error != 0:
+        print("%s" % packetHandler.getRxPacketError(dxl_error))
+    else:
+        print("Dynamixel#%d has set max velocity" % DXL3_ID)
 
-# Enable Dynamixel#4 Torque
-dxl_comm_result, dxl_error = packetHandler.write4ByteTxRx(portHandler, DXL4_ID, ADDR_PRO_VELOCITY_LIMIT, MAX_VELOCITY)
-if dxl_comm_result != COMM_SUCCESS:
-    print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
-elif dxl_error != 0:
-    print("%s" % packetHandler.getRxPacketError(dxl_error))
-else:
-    print("Dynamixel#%d has been successfully connected" % DXL4_ID)
+    # Enable Dynamixel#4 Torque
+    dxl_comm_result, dxl_error = packetHandler.write4ByteTxRx(portHandler, DXL4_ID, ADDR_PRO_VELOCITY_LIMIT, MAX_VELOCITY)
+    if dxl_comm_result != COMM_SUCCESS:
+        print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
+    elif dxl_error != 0:
+        print("%s" % packetHandler.getRxPacketError(dxl_error))
+    else:
+        print("Dynamixel#%d has set max velocity" % DXL4_ID)
 
-# Enable Dynamixel#1 Torque
-dxl_comm_result, dxl_error = packetHandler.write1ByteTxRx(portHandler, DXL1_ID, ADDR_PRO_TORQUE_ENABLE, TORQUE_ENABLE)
-if dxl_comm_result != COMM_SUCCESS:
-    print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
-elif dxl_error != 0:
-    print("%s" % packetHandler.getRxPacketError(dxl_error))
-else:
-    print("Dynamixel#%d has been successfully connected" % DXL1_ID)
+if Ballscrew:
+    dxl_comm_result, dxl_error = packetHandler.write4ByteTxRx(portHandler, DXL5_ID, ADDR_PRO_VELOCITY_LIMIT, MAX_VELOCITY)
+    if dxl_comm_result != COMM_SUCCESS:
+        print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
+    elif dxl_error != 0:
+        print("%s" % packetHandler.getRxPacketError(dxl_error))
+    else:
+        print("Dynamixel#%d has set max velocity" % DXL5_ID)
 
-# Enable Dynamixel#2 Torque
-dxl_comm_result, dxl_error = packetHandler.write1ByteTxRx(portHandler, DXL2_ID, ADDR_PRO_TORQUE_ENABLE, TORQUE_ENABLE)
-if dxl_comm_result != COMM_SUCCESS:
-    print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
-elif dxl_error != 0:
-    print("%s" % packetHandler.getRxPacketError(dxl_error))
-else:
-    print("Dynamixel#%d has been successfully connected" % DXL2_ID)
+if Arm:
+    # Enable Dynamixel#1 Torque
+    dxl_comm_result, dxl_error = packetHandler.write1ByteTxRx(portHandler, DXL1_ID, ADDR_PRO_TORQUE_ENABLE, TORQUE_ENABLE)
+    if dxl_comm_result != COMM_SUCCESS:
+        print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
+    elif dxl_error != 0:
+        print("%s" % packetHandler.getRxPacketError(dxl_error))
+    else:
+        print("Dynamixel#%d has been successfully connected" % DXL1_ID)
 
-# Enable Dynamixel#3 Torque
-dxl_comm_result, dxl_error = packetHandler.write1ByteTxRx(portHandler, DXL3_ID, ADDR_PRO_TORQUE_ENABLE, TORQUE_ENABLE)
-if dxl_comm_result != COMM_SUCCESS:
-    print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
-elif dxl_error != 0:
-    print("%s" % packetHandler.getRxPacketError(dxl_error))
-else:
-    print("Dynamixel#%d has been successfully connected" % DXL3_ID)
+    # Enable Dynamixel#2 Torque
+    dxl_comm_result, dxl_error = packetHandler.write1ByteTxRx(portHandler, DXL2_ID, ADDR_PRO_TORQUE_ENABLE, TORQUE_ENABLE)
+    if dxl_comm_result != COMM_SUCCESS:
+        print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
+    elif dxl_error != 0:
+        print("%s" % packetHandler.getRxPacketError(dxl_error))
+    else:
+        print("Dynamixel#%d has been successfully connected" % DXL2_ID)
 
-# Enable Dynamixel#4 Torque
-dxl_comm_result, dxl_error = packetHandler.write1ByteTxRx(portHandler, DXL4_ID, ADDR_PRO_TORQUE_ENABLE, TORQUE_ENABLE)
-if dxl_comm_result != COMM_SUCCESS:
-    print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
-elif dxl_error != 0:
-    print("%s" % packetHandler.getRxPacketError(dxl_error))
-else:
-    print("Dynamixel#%d has been successfully connected" % DXL4_ID)
+    # Enable Dynamixel#3 Torque
+    dxl_comm_result, dxl_error = packetHandler.write1ByteTxRx(portHandler, DXL3_ID, ADDR_PRO_TORQUE_ENABLE, TORQUE_ENABLE)
+    if dxl_comm_result != COMM_SUCCESS:
+        print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
+    elif dxl_error != 0:
+        print("%s" % packetHandler.getRxPacketError(dxl_error))
+    else:
+        print("Dynamixel#%d has been successfully connected" % DXL3_ID)
 
+    # Enable Dynamixel#4 Torque
+    dxl_comm_result, dxl_error = packetHandler.write1ByteTxRx(portHandler, DXL4_ID, ADDR_PRO_TORQUE_ENABLE, TORQUE_ENABLE)
+    if dxl_comm_result != COMM_SUCCESS:
+        print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
+    elif dxl_error != 0:
+        print("%s" % packetHandler.getRxPacketError(dxl_error))
+    else:
+        print("Dynamixel#%d has been successfully connected" % DXL4_ID)
 
-# Add parameter storage for Dynamixel#1 present position value
-dxl_addparam_result = groupSyncRead.addParam(DXL1_ID)
-if dxl_addparam_result != True:
-    print("[ID:%03d] groupSyncRead addparam failed" % DXL1_ID)
-    quit()
+if Ballscrew:
+# Enable Dynamixel#5 Torque
+    dxl_comm_result, dxl_error = packetHandler.write1ByteTxRx(portHandler, DXL5_ID, ADDR_PRO_TORQUE_ENABLE, TORQUE_ENABLE)
+    if dxl_comm_result != COMM_SUCCESS:
+        print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
+    elif dxl_error != 0:
+        print("%s" % packetHandler.getRxPacketError(dxl_error))
+    else:
+        print("Dynamixel#%d has been successfully connected" % DXL5_ID)
 
-# Add parameter storage for Dynamixel#2 present position value
-dxl_addparam_result = groupSyncRead.addParam(DXL2_ID)
-if dxl_addparam_result != True:
-    print("[ID:%03d] groupSyncRead addparam failed" % DXL2_ID)
-    quit()
+if Arm:
+    #Add parameter storage for Dynamixel#1 present position value
+    dxl_addparam_result = groupSyncRead.addParam(DXL1_ID)
+    if dxl_addparam_result != True:
+        print("[ID:%03d] groupSyncRead addparam failed" % DXL1_ID)
+        quit()
 
-dxl_addparam_result = groupSyncRead.addParam(DXL3_ID)
-if dxl_addparam_result != True:
-    print("[ID:%03d] groupSyncRead addparam failed" % DXL3_ID)
-    quit()
+    # Add parameter storage for Dynamixel#2 present position value
+    dxl_addparam_result = groupSyncRead.addParam(DXL2_ID)
+    if dxl_addparam_result != True:
+        print("[ID:%03d] groupSyncRead addparam failed" % DXL2_ID)
+        quit()
 
-# Add parameter storage for Dynamixel#2 present position value
-dxl_addparam_result = groupSyncRead.addParam(DXL4_ID)
-if dxl_addparam_result != True:
-    print("[ID:%03d] groupSyncRead addparam failed" % DXL4_ID)
-    quit()
+    dxl_addparam_result = groupSyncRead.addParam(DXL3_ID)
+    if dxl_addparam_result != True:
+        print("[ID:%03d] groupSyncRead addparam failed" % DXL3_ID)
+        quit()
+
+    # Add parameter storage for Dynamixel#2 present position value
+    dxl_addparam_result = groupSyncRead.addParam(DXL4_ID)
+    if dxl_addparam_result != True:
+        print("[ID:%03d] groupSyncRead addparam failed" % DXL4_ID)
+        quit()
+
+if Ballscrew:
+    # Add parameter storage for Dynamixel#2 present position value
+    dxl_addparam_result = groupSyncRead.addParam(DXL5_ID)
+    if dxl_addparam_result != True:
+        print("[ID:%03d] groupSyncRead addparam failed" % DXL5_ID)
+        quit()
 
 while 1:
     print("Press any key to continue! (or press ESC to quit!)")
     if getch() == chr(0x1b):
         break
-    getArmToPosition(1000, 2048, 1000, 3165)
-
+    getArmToPosition(groupSyncWrite, groupSyncRead, packetHandler, 1000, 2048, 1000, 3165)
+    getBallToPosition(groupSyncWrite, groupSyncRead, packetHandler, dxl_goal_position2[index])
 
     #
     # # Change goal position
-    # if index == 0:
-    #     index = 1
-    # else:
-    #     index = 0
+    if index == 0:
+        index = 1
+    else:
+        index = 0
 
 # Clear syncread parameter storage
 groupSyncRead.clearParam()
 
-# Disable Dynamixel#1 Torque
-dxl_comm_result, dxl_error = packetHandler.write1ByteTxRx(portHandler, DXL1_ID, ADDR_PRO_TORQUE_ENABLE, TORQUE_DISABLE)
-if dxl_comm_result != COMM_SUCCESS:
-    print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
-elif dxl_error != 0:
-    print("%s" % packetHandler.getRxPacketError(dxl_error))
+if Arm:
+    # Disable Dynamixel#1 Torque
+    dxl_comm_result, dxl_error = packetHandler.write1ByteTxRx(portHandler, DXL1_ID, ADDR_PRO_TORQUE_ENABLE, TORQUE_DISABLE)
+    if dxl_comm_result != COMM_SUCCESS:
+        print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
+    elif dxl_error != 0:
+        print("%s" % packetHandler.getRxPacketError(dxl_error))
 
-# Disable Dynamixel#2 Torque
-dxl_comm_result, dxl_error = packetHandler.write1ByteTxRx(portHandler, DXL2_ID, ADDR_PRO_TORQUE_ENABLE, TORQUE_DISABLE)
-if dxl_comm_result != COMM_SUCCESS:
-    print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
-elif dxl_error != 0:
-    print("%s" % packetHandler.getRxPacketError(dxl_error))
+    # Disable Dynamixel#2 Torque
+    dxl_comm_result, dxl_error = packetHandler.write1ByteTxRx(portHandler, DXL2_ID, ADDR_PRO_TORQUE_ENABLE, TORQUE_DISABLE)
+    if dxl_comm_result != COMM_SUCCESS:
+        print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
+    elif dxl_error != 0:
+        print("%s" % packetHandler.getRxPacketError(dxl_error))
 
-# Disable Dynamixel#3 Torque
-dxl_comm_result, dxl_error = packetHandler.write1ByteTxRx(portHandler, DXL3_ID, ADDR_PRO_TORQUE_ENABLE, TORQUE_DISABLE)
-if dxl_comm_result != COMM_SUCCESS:
-    print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
-elif dxl_error != 0:
-    print("%s" % packetHandler.getRxPacketError(dxl_error))
+    # Disable Dynamixel#3 Torque
+    dxl_comm_result, dxl_error = packetHandler.write1ByteTxRx(portHandler, DXL3_ID, ADDR_PRO_TORQUE_ENABLE, TORQUE_DISABLE)
+    if dxl_comm_result != COMM_SUCCESS:
+        print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
+    elif dxl_error != 0:
+        print("%s" % packetHandler.getRxPacketError(dxl_error))
 
-# Disable Dynamixel#4 Torque
-dxl_comm_result, dxl_error = packetHandler.write1ByteTxRx(portHandler, DXL4_ID, ADDR_PRO_TORQUE_ENABLE, TORQUE_DISABLE)
-if dxl_comm_result != COMM_SUCCESS:
-    print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
-elif dxl_error != 0:
-    print("%s" % packetHandler.getRxPacketError(dxl_error))
+    # Disable Dynamixel#4 Torque
+    dxl_comm_result, dxl_error = packetHandler.write1ByteTxRx(portHandler, DXL4_ID, ADDR_PRO_TORQUE_ENABLE, TORQUE_DISABLE)
+    if dxl_comm_result != COMM_SUCCESS:
+        print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
+    elif dxl_error != 0:
+        print("%s" % packetHandler.getRxPacketError(dxl_error))
+
+if Ballscrew:
+    # Disable Dynamixel#5 Torque
+    dxl_comm_result, dxl_error = packetHandler.write1ByteTxRx(portHandler, DXL5_ID, ADDR_PRO_TORQUE_ENABLE, TORQUE_DISABLE)
+    if dxl_comm_result != COMM_SUCCESS:
+        print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
+    elif dxl_error != 0:
+        print("%s" % packetHandler.getRxPacketError(dxl_error))
 
 # Close port
 portHandler.closePort()
